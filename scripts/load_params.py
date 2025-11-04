@@ -134,57 +134,99 @@ def build_training_command(params: dict, dry_run: bool = False, overrides: list 
     training = params["training"]
     docker = params["docker"]
     paths = params["paths"]
-    
+    wandb_config = params.get("wandb", {})
+
     # Get current working directory (works on both Windows and Unix)
     import os
     pwd = os.getcwd().replace("\\", "/")  # Normalize Windows paths
-    
+
     # Build command arguments
     cmd = [
         "docker", "run", "--rm", "--gpus", docker["gpus"],
         "--shm-size", docker["shm_size"],
+    ]
+
+    # Add environment variables
+    # MKL threading fix for Docker
+    cmd.extend(["-e", "MKL_THREADING_LAYER=GNU"])
+    # Suppress CUDA/PyTorch startup messages (quiet mode)
+    cmd.extend(["-e", "PYTHONWARNINGS=ignore"])
+
+    # Add W&B API key environment variable if configured
+    if wandb_config.get("enabled", False):
+        # Get W&B API key from environment (or fallback to empty)
+        wandb_api_key = os.environ.get("WANDB_API_KEY", "")
+        if wandb_api_key:
+            cmd.extend(["-e", f"WANDB_API_KEY={wandb_api_key}"])
+        if wandb_config.get("entity"):
+            cmd.extend(["-e", f"WANDB_ENTITY={wandb_config['entity']}"])
+        if wandb_config.get("project"):
+            cmd.extend(["-e", f"WANDB_PROJECT={wandb_config['project']}"])
+        # Force online mode for W&B logging
+        cmd.extend(["-e", "WANDB_MODE=online"])
+
+    # Add volume mounts
+    cmd.extend([
         "-v", f"{pwd}/{paths['data']}:{docker['workdir']}/data:ro",
         "-v", f"{pwd}/{paths['ckpts']}:{docker['workdir']}/ckpts",
         "-v", f"{pwd}/{paths['src']}:{docker['workdir']}/src",
+        "-v", f"{pwd}/train_with_wandb.py:{docker['workdir']}/train_with_wandb.py:ro",
+        "-v", f"{pwd}/params.yaml:{docker['workdir']}/params.yaml:ro",
         "-w", docker["workdir"],
         docker["image"],
-        "python", f"{docker['workdir']}/src/f5_tts/train/finetune_cli.py",
-        "--exp_name", training["exp_name"],
-        "--dataset_name", training["dataset_name"],
-        "--learning_rate", str(training["learning_rate"]),
-        "--batch_size_per_gpu", str(training["batch_size_per_gpu"]),
-        "--batch_size_type", training["batch_size_type"],
-        "--max_samples", str(training["max_samples"]),
-        "--epochs", str(training["epochs"]),
-        "--num_warmup_updates", str(training["num_warmup_updates"]),
-        "--save_per_updates", str(training["save_per_updates"]),
-        "--keep_last_n_checkpoints", str(training["keep_last_n_checkpoints"]),
-    ]
-    
-    if training.get("finetune", False):
-        cmd.append("--finetune")
-    
-    if training.get("pretrain"):
-        cmd.extend(["--pretrain", training["pretrain"]])
-    
-    cmd.extend(["--tokenizer", training["tokenizer"]])
-    
-    if training.get("tokenizer_path"):
-        cmd.extend(["--tokenizer_path", training["tokenizer_path"]])
-    
-    if training.get("log_samples", False):
-        cmd.append("--log_samples")
-    
-    if training.get("logger"):
-        cmd.extend(["--logger", training["logger"]])
-    
-    if training.get("bnb_optimizer", False):
-        cmd.append("--bnb_optimizer")
-    
+    ])
+
+    # Use W&B wrapper if logger is wandb, otherwise use finetune_cli directly
+    use_wandb_wrapper = training.get("logger") == "wandb" and wandb_config.get("enabled", False)
+
+    if use_wandb_wrapper:
+        cmd.extend([
+            "python", f"{docker['workdir']}/train_with_wandb.py",
+            # Wrapper reads params.yaml, no need to pass arguments
+        ])
+    else:
+        cmd.extend([
+            "python", f"{docker['workdir']}/src/f5_tts/train/finetune_cli.py",
+        ])
+
+        # Add training arguments (only for finetune_cli, not for wrapper)
+        cmd.extend([
+            "--exp_name", training["exp_name"],
+            "--dataset_name", training["dataset_name"],
+            "--learning_rate", str(training["learning_rate"]),
+            "--batch_size_per_gpu", str(training["batch_size_per_gpu"]),
+            "--batch_size_type", training["batch_size_type"],
+            "--max_samples", str(training["max_samples"]),
+            "--epochs", str(training["epochs"]),
+            "--num_warmup_updates", str(training["num_warmup_updates"]),
+            "--save_per_updates", str(training["save_per_updates"]),
+            "--keep_last_n_checkpoints", str(training["keep_last_n_checkpoints"]),
+        ])
+
+        if training.get("finetune", False):
+            cmd.append("--finetune")
+
+        if training.get("pretrain"):
+            cmd.extend(["--pretrain", training["pretrain"]])
+
+        cmd.extend(["--tokenizer", training["tokenizer"]])
+
+        if training.get("tokenizer_path"):
+            cmd.extend(["--tokenizer_path", training["tokenizer_path"]])
+
+        if training.get("log_samples", False):
+            cmd.append("--log_samples")
+
+        if training.get("logger"):
+            cmd.extend(["--logger", training["logger"]])
+
+        if training.get("bnb_optimizer", False):
+            cmd.append("--bnb_optimizer")
+
     # Apply overrides
     if overrides:
         cmd.extend(overrides)
-    
+
     return cmd
 
 
