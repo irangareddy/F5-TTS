@@ -53,6 +53,9 @@ class Trainer:
         is_local_vocoder: bool = False,  # use local path vocoder
         local_vocoder_path: str = "",  # local vocoder path
         model_cfg_dict: dict = dict(),  # training config
+        validation_interval: int = 1,  # Validate every N epochs
+        early_stopping_patience: int = 3,  # Stop if no improvement for N validation checks
+        early_stopping_threshold: float = 0.001,  # Min relative improvement to count as improvement
     ):
         ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
 
@@ -117,6 +120,14 @@ class Trainer:
         self.last_per_updates = default(last_per_updates, save_per_updates)
         self.checkpoint_path = default(checkpoint_path, "ckpts/test_f5-tts")
 
+        # Validation and early stopping parameters
+        self.validation_interval = validation_interval
+        self.early_stopping_patience = early_stopping_patience
+        self.early_stopping_threshold = early_stopping_threshold
+        self.best_val_loss = float("inf")
+        self.patience_counter = 0
+        self.should_stop = False
+
         self.batch_size_per_gpu = batch_size_per_gpu
         self.batch_size_type = batch_size_type
         self.max_samples = max_samples
@@ -144,7 +155,7 @@ class Trainer:
     def is_main(self):
         return self.accelerator.is_main_process
 
-    def save_checkpoint(self, update, last=False):
+    def save_checkpoint(self, update, last=False, best=False):
         self.accelerator.wait_for_everyone()
         if self.is_main:
             checkpoint = dict(
@@ -156,7 +167,10 @@ class Trainer:
             )
             if not os.path.exists(self.checkpoint_path):
                 os.makedirs(self.checkpoint_path)
-            if last:
+            if best:
+                self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_best.pt")
+                print(f"Saved best checkpoint at update {update}")
+            elif last:
                 self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_last.pt")
                 print(f"Saved last checkpoint at update {update}")
             else:
@@ -170,6 +184,7 @@ class Trainer:
                         for f in os.listdir(self.checkpoint_path)
                         if f.startswith("model_")
                         and not f.startswith("pretrained_")  # Exclude pretrained models
+                        and f != "model_best.pt"  # Exclude best model
                         and f.endswith(".pt")
                         and f != "model_last.pt"
                     ]
@@ -259,7 +274,80 @@ class Trainer:
         gc.collect()
         return update
 
-    def train(self, train_dataset: Dataset, num_workers=16, resumable_with_seed: int = None):
+    def validate(self, val_dataset: Dataset, num_workers=16):
+        """Perform validation and return average validation loss."""
+        self.model.eval()
+        total_loss = 0
+        total_batches = 0
+
+        # Create validation dataloader with same batch size settings as training
+        if self.batch_size_type == "sample":
+            val_dataloader = DataLoader(
+                val_dataset,
+                collate_fn=collate_fn,
+                num_workers=num_workers,
+                pin_memory=True,
+                persistent_workers=False,
+                batch_size=self.batch_size_per_gpu,
+                shuffle=False,
+            )
+        elif self.batch_size_type == "frame":
+            self.accelerator.even_batches = False
+            sampler = SequentialSampler(val_dataset)
+            batch_sampler = DynamicBatchSampler(
+                sampler,
+                self.batch_size_per_gpu,
+                max_samples=self.max_samples,
+                drop_residual=False,
+            )
+            val_dataloader = DataLoader(
+                val_dataset,
+                collate_fn=collate_fn,
+                num_workers=num_workers,
+                pin_memory=True,
+                persistent_workers=False,
+                batch_sampler=batch_sampler,
+            )
+
+        val_dataloader = self.accelerator.prepare(val_dataloader)
+
+        with torch.no_grad():
+            for batch in val_dataloader:
+                text_inputs = batch["text"]
+                mel_spec = batch["mel"].permute(0, 2, 1)
+                mel_lengths = batch["mel_lengths"]
+
+                loss, _, _ = self.model(
+                    mel_spec, text=text_inputs, lens=mel_lengths, noise_scheduler=self.noise_scheduler
+                )
+
+                total_loss += loss.item()
+                total_batches += 1
+
+        avg_val_loss = total_loss / max(total_batches, 1)
+        self.model.train()
+        return avg_val_loss
+
+    def update_early_stopping(self, val_loss, update):
+        """Update early stopping state and return True if training should stop."""
+        # Check if validation loss improved
+        if val_loss < self.best_val_loss * (1 - self.early_stopping_threshold):
+            # Improved - save best model and reset patience
+            self.best_val_loss = val_loss
+            self.patience_counter = 0
+            return False, True  # (should_stop, is_best)
+        else:
+            # Not improved - increment patience counter
+            self.patience_counter += 1
+            if self.patience_counter >= self.early_stopping_patience:
+                print(
+                    f"Early stopping triggered at update {update}. "
+                    f"No improvement in validation loss for {self.early_stopping_patience} checks."
+                )
+                return True, False  # (should_stop, is_best)
+            return False, False  # (should_stop, is_best)
+
+    def train(self, train_dataset: Dataset, val_dataset: Dataset | None = None, num_workers=16, resumable_with_seed: int = None):
         if self.log_samples:
             from f5_tts.infer.utils_infer import cfg_strength, load_vocoder, nfe_step, sway_sampling_coef
 
@@ -433,6 +521,31 @@ class Trainer:
                             f"{log_samples_path}/update_{global_update}_ref.wav", ref_audio, target_sample_rate
                         )
                         self.model.train()
+
+            # Perform validation at the end of each epoch if validation dataset is provided
+            if val_dataset is not None and (epoch + 1) % self.validation_interval == 0:
+                if self.is_main:
+                    print(f"\nValidating at end of epoch {epoch + 1}...")
+                val_loss = self.validate(val_dataset, num_workers=num_workers)
+
+                if self.accelerator.is_local_main_process:
+                    self.accelerator.log({"val_loss": val_loss}, step=global_update)
+                    if self.logger == "tensorboard":
+                        self.writer.add_scalar("val_loss", val_loss, global_update)
+
+                # Update early stopping and save best model if improved
+                should_stop, is_best = self.update_early_stopping(val_loss, global_update)
+                if is_best:
+                    self.save_checkpoint(global_update, best=True)
+
+                if should_stop:
+                    if self.is_main:
+                        print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+                    self.should_stop = True
+                    break
+
+            if self.should_stop:
+                break
 
         self.save_checkpoint(global_update, last=True)
 
