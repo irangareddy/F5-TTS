@@ -38,9 +38,6 @@ tasks:
     desc: Start Jupyter Lab with Docker Compose
     cmds:
       - docker-compose up -d jupyter
-      - echo "Jupyter Lab started! Access it at: http://localhost:8888"
-      - echo "To stop: task jupyter:stop"
-      - echo "To view logs: task jupyter:logs"
     preconditions:
       - test -f "{{.PARAMS_FILE}}"
       - test -f "docker-compose.yml"
@@ -50,7 +47,6 @@ tasks:
     cmds:
       - docker-compose stop jupyter
       - docker-compose rm -f jupyter
-      - echo "Jupyter Lab container stopped"
 
   jupyter:logs:
     desc: View Jupyter Lab logs
