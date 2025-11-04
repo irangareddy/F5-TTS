@@ -217,7 +217,7 @@ class Trainer:
         elif latest_checkpoint.endswith(".pt"):
             # checkpoint = torch.load(f"{self.checkpoint_path}/{latest_checkpoint}", map_location=self.accelerator.device)  # rather use accelerator.load_state ಥ_ಥ
             checkpoint = torch.load(
-                f"{self.checkpoint_path}/{latest_checkpoint}", weights_only=True, map_location="cpu"
+                f"{self.checkpoint_path}/{latest_checkpoint}", weights_only=False, map_location="cpu"
             )
 
         # patch for backward compatibility, 305e3ea

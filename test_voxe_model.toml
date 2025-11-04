@@ -1,0 +1,19 @@
+# Test configuration for fine-tuned VOXE model
+# F5TTS_v1_Base | E2TTS_Base
+model = "F5TTS_v1_Base"
+# Use the fine-tuned checkpoint
+ckpt_file = "ckpts/voxe/model_last.pt"
+# Use the vocab file from training
+vocab_file = "data/voxe_char/vocab.txt"
+# Reference audio from VOXE dataset
+ref_audio = "data/voxe/wav24k/esd/0011/Angry/0011_000351.wav"
+# Reference text for the audio
+ref_text = "the nine the eggs, i keep."
+# Text to generate
+gen_text = "This is a test of the fine-tuned F5-TTS model on the VOXE dataset. The model has been trained with emotion and style variations."
+# File with text to generate. Ignores the text above.
+gen_file = ""
+remove_silence = false
+output_dir = "tests"
+output_file = "voxe_finetuned_test.wav"
+

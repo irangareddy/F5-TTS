@@ -120,7 +120,7 @@ This is your starting configuration for fast experimentation.
 
 ```bash
 python src/f5_tts/train/finetune_cli.py ^
-  --exp_name F5TTS_VOXE_small_test ^
+  --exp_name F5TTS_v1_Base ^
   --dataset_name voxe ^
   --learning_rate 1e-5 ^
   --batch_size_per_gpu 800 ^
@@ -134,11 +134,13 @@ python src/f5_tts/train/finetune_cli.py ^
   --tokenizer char
 ```
 
+**Note:** `--exp_name` selects the model architecture (F5TTS_v1_Base, F5TTS_Base, or E2TTS_Base), not a custom experiment name. The checkpoint output directory is determined by `--dataset_name` (will be saved to `ckpts/voxe/`).
+
 **For Linux/Mac:** Replace `^` with `\` and adjust path syntax.
 
 ### What This Does
-- **exp_name:** Creates a results folder with this name (`ckpts/F5TTS_VOXE_small_test/`)
-- **dataset_name:** Points to `data/voxe/` directory
+- **exp_name:** Selects model architecture (F5TTS_v1_Base, F5TTS_Base, or E2TTS_Base)
+- **dataset_name:** Points to `data/voxe/` directory and determines checkpoint output directory (`ckpts/voxe/`)
 - **epochs:** Runs for only 2 passes through the data (very fast)
 - **batch_size_per_gpu:** 800 frames per GPU batch (memory-efficient)
 - **save_per_updates:** Saves full checkpoint every 50 updates (frequent saves)
@@ -154,7 +156,7 @@ python src/f5_tts/train/finetune_cli.py ^
 [2025-11-03 10:32:00] Epoch 1/2, Batch 3/3
 [2025-11-03 10:32:25] Loss: 2.52 | LR: 1e-5
 [2025-11-03 10:32:30] Epoch 1/2 complete. Saving checkpoint...
-[2025-11-03 10:32:50] Checkpoint saved to: ckpts/F5TTS_VOXE_small_test/ckpt_50_updates.pt
+[2025-11-03 10:32:50] Checkpoint saved to: ckpts/voxe/ckpt_50_updates.pt
 ...
 [2025-11-03 10:35:00] Training complete!
 ```
@@ -213,7 +215,7 @@ The script will print progress to console:
 ### Step 4: Locate Checkpoints
 After training completes, your checkpoints are saved in:
 ```
-ckpts/F5TTS_VOXE_small_test/
+ckpts/voxe/
 ├── ckpt_50_updates.pt              # Checkpoint after 50 updates
 ├── ckpt_100_updates.pt             # Checkpoint after 100 updates
 ├── ckpt_150_updates.pt             # Checkpoint after 150 updates
@@ -289,7 +291,7 @@ nvidia-smi
 While training is running, open another terminal:
 ```bash
 # Watch checkpoint sizes grow
-dir /S ckpts\F5TTS_VOXE_small_test
+dir /S ckpts\voxe
 
 # Tail training output (if logging to file)
 # On Windows PowerShell:
@@ -310,7 +312,7 @@ from f5_tts.infer.utils_infer import tts_infer_stream
 
 # Load your fine-tuned model
 model = F5TTS(
-    ckpt_path="ckpts/F5TTS_VOXE_small_test/ckpt_150_updates.pt",
+    ckpt_path="ckpts/voxe/ckpt_150_updates.pt",
     use_ema=False  # Use regular weights (EMA weights are pre-trained dominated)
 )
 
@@ -366,7 +368,7 @@ sf.write("base_model_output.wav", gen_base, sr_base)
 
 ### Step 4: Validation Metrics
 
-During training, check your `ckpts/F5TTS_VOXE_small_test/training_log.txt`:
+During training, check your `ckpts/voxe/training_log.txt`:
 
 ```
 Epoch 1/2
@@ -396,7 +398,7 @@ Once you validate results with 20 samples, gradually scale:
 ### Phase 1: Medium Dataset (50-100 samples)
 ```bash
 python src/f5_tts/train/finetune_cli.py ^
-  --exp_name F5TTS_VOXE_medium ^
+  --exp_name F5TTS_v1_Base ^
   --dataset_name voxe ^
   --learning_rate 5e-6 ^
   --batch_size_per_gpu 1600 ^
@@ -419,7 +421,7 @@ python src/f5_tts/train/finetune_cli.py ^
 ### Phase 2: Large Dataset (200+ samples)
 ```bash
 python src/f5_tts/train/finetune_cli.py ^
-  --exp_name F5TTS_VOXE_full ^
+  --exp_name F5TTS_v1_Base ^
   --dataset_name voxe ^
   --learning_rate 7.5e-6 ^
   --batch_size_per_gpu 3200 ^
@@ -510,10 +512,10 @@ python src/f5_tts/train/finetune_cli.py ^
 - [ ] GPU is detected: `nvidia-smi` shows your GPU
 - [ ] Loss is decreasing: Check console output
 - [ ] No out-of-memory errors: If OOM, reduce `batch_size_per_gpu`
-- [ ] Checkpoints are saving: Check `ckpts/F5TTS_VOXE_small_test/` folder size growing
+- [ ] Checkpoints are saving: Check `ckpts/voxe/` folder size growing
 
 ### After Training
-- [ ] Checkpoint file exists: `dir ckpts/F5TTS_VOXE_small_test`
+- [ ] Checkpoint file exists: `dir ckpts/voxe`
 - [ ] Can load checkpoint: Test with Python code above
 - [ ] Generated audio is audible: Play generated .wav file
 
@@ -582,10 +584,10 @@ Your VOXE data is already in the correct format. You're ready to fine-tune!
 dir ckpts
 
 # Check latest checkpoint
-dir ckpts\F5TTS_VOXE_small_test /O:D /S
+dir ckpts\voxe /O:D /S
 
 # Clean up old checkpoints (manual)
-del ckpts\F5TTS_VOXE_small_test\ckpt_*_updates.pt
+del ckpts\voxe\ckpt_*_updates.pt
 ```
 
 ---
