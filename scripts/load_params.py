@@ -176,18 +176,12 @@ def build_training_command(params: dict, dry_run: bool = False, overrides: list 
         docker["image"],
     ])
 
-    # Use W&B wrapper if logger is wandb, otherwise use finetune_cli or manifest_cli
-    use_wandb_wrapper = training.get("logger") == "wandb" and wandb_config.get("enabled", False)
-
-    # Check if validation_split is configured (indicates manifest-based training)
+    # Determine which training script to use
+    # Priority: manifest CLI (if validation_split set) > finetune_cli (default)
+    # Note: train_manifest_cli.py handles both WandB logging and manifest data
     use_manifest_training = bool(training.get("validation_split"))
 
-    if use_wandb_wrapper:
-        cmd.extend([
-            "python", f"{docker['workdir']}/train_with_wandb.py",
-            # Wrapper reads params.yaml, no need to pass arguments
-        ])
-    elif use_manifest_training:
+    if use_manifest_training:
         cmd.extend([
             "python", f"{docker['workdir']}/src/f5_tts/train/train_manifest_cli.py",
             "--exp_name", training["exp_name"],
