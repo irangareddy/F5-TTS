@@ -1,5 +1,6 @@
 import json
 from importlib.resources import files
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -12,6 +13,79 @@ from tqdm import tqdm
 
 from f5_tts.model.modules import MelSpec
 from f5_tts.model.utils import default
+
+
+class ManifestDataset(Dataset):
+    """Dataset that loads samples from a JSONL manifest file."""
+
+    def __init__(
+        self,
+        manifest_path: str,
+        target_sample_rate=24_000,
+        n_mel_channels=100,
+        hop_length=256,
+        n_fft=1024,
+        win_length=1024,
+        mel_spec_type="vocos",
+    ):
+        self.manifest_path = manifest_path
+        self.target_sample_rate = target_sample_rate
+        self.hop_length = hop_length
+
+        self.mel_spectrogram = MelSpec(
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            n_mel_channels=n_mel_channels,
+            target_sample_rate=target_sample_rate,
+            mel_spec_type=mel_spec_type,
+        )
+
+        # Load manifest and store as list for indexing
+        self.data = []
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    self.data.append(json.loads(line))
+
+    def get_frame_len(self, index):
+        row = self.data[index]
+        duration = row.get("duration_s", 0)
+        return duration * self.target_sample_rate / self.hop_length
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        row = self.data[index]
+        audio_path = row["wav_path"]
+        text = row["text"]
+        duration = row.get("duration_s", 0)
+
+        # Filter by given length
+        if not (0.3 <= duration <= 30):
+            # Return next valid sample
+            return self.__getitem__((index + 1) % len(self.data))
+
+        audio, source_sample_rate = torchaudio.load(audio_path)
+
+        # Make sure mono input
+        if audio.shape[0] > 1:
+            audio = torch.mean(audio, dim=0, keepdim=True)
+
+        # Resample if necessary
+        if source_sample_rate != self.target_sample_rate:
+            resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
+            audio = resampler(audio)
+
+        # Compute mel spectrogram
+        mel_spec = self.mel_spectrogram(audio)
+        mel_spec = mel_spec.squeeze(0)  # 1 d t -> d t
+
+        return dict(
+            mel_spec=mel_spec,
+            text=text,
+        )
 
 
 class HFDataset(Dataset):
