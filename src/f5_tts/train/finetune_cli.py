@@ -1,6 +1,8 @@
 import argparse
+import logging
 import os
 import shutil
+import warnings
 from importlib.resources import files
 
 from cached_path import cached_path
@@ -8,6 +10,11 @@ from cached_path import cached_path
 from f5_tts.model import CFM, DiT, Trainer, UNetT
 from f5_tts.model.dataset import load_dataset
 from f5_tts.model.utils import get_tokenizer
+
+# Suppress CUDA/PyTorch warnings and info messages (quiet mode)
+warnings.filterwarnings("ignore", category=UserWarning)
+logging.getLogger("torch").setLevel(logging.ERROR)
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
 # -------------------------- Dataset Settings --------------------------- #
@@ -180,6 +187,35 @@ def main():
         vocab_char_map=vocab_char_map,
     )
 
+    # Build comprehensive model config dict for WandB logging
+    model_cfg_dict = {
+        # Model architecture
+        "model_name": args.exp_name,
+        "backbone": "DiT" if args.exp_name in ["F5TTS_v1_Base", "F5TTS_Base"] else "UNetT",
+        **model_cfg,  # Include all model architecture parameters (dim, depth, heads, ff_mult, text_dim, conv_layers, etc.)
+
+        # Training configuration
+        "dataset_name": args.dataset_name,
+        "learning_rate": args.learning_rate,
+        "batch_size_per_gpu": args.batch_size_per_gpu,
+        "batch_size_type": args.batch_size_type,
+        "max_samples": args.max_samples,
+        "grad_accumulation_steps": args.grad_accumulation_steps,
+        "max_grad_norm": args.max_grad_norm,
+        "epochs": args.epochs,
+        "num_warmup_updates": args.num_warmup_updates,
+        "save_per_updates": args.save_per_updates,
+        "keep_last_n_checkpoints": args.keep_last_n_checkpoints,
+        "last_per_updates": args.last_per_updates,
+
+        # Additional settings
+        "tokenizer": args.tokenizer,
+        "bnb_optimizer": args.bnb_optimizer,
+        "finetune": args.finetune,
+        "log_samples": args.log_samples,
+        "mel_spec_type": mel_spec_type,
+    }
+
     trainer = Trainer(
         model,
         args.epochs,
@@ -200,6 +236,7 @@ def main():
         log_samples=args.log_samples,
         last_per_updates=args.last_per_updates,
         bnb_optimizer=args.bnb_optimizer,
+        model_cfg_dict=model_cfg_dict,
     )
 
     train_dataset = load_dataset(args.dataset_name, tokenizer, mel_spec_kwargs=mel_spec_kwargs)
