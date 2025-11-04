@@ -1,4 +1,5 @@
 import json
+import os
 from importlib.resources import files
 from pathlib import Path
 
@@ -66,6 +67,12 @@ class ManifestDataset(Dataset):
         if not (0.3 <= duration <= 30):
             # Return next valid sample
             return self.__getitem__((index + 1) % len(self.data))
+
+        # Auto-map manifest paths: handle outputs/full/ -> data/voxe/ mapping
+        if not os.path.exists(audio_path):
+            mapped_path = audio_path.replace("outputs/full/", "data/voxe/")
+            if os.path.exists(mapped_path):
+                audio_path = mapped_path
 
         audio, source_sample_rate = torchaudio.load(audio_path)
 
