@@ -4,49 +4,55 @@
 training:
   # Model architecture: F5TTS_v1_Base | F5TTS_Base | E2TTS_Base
   exp_name: F5TTS_v1_Base
-  
+
   # Dataset name - determines data directory and checkpoint output directory
   dataset_name: voxe
-  
+
   # Training hyperparameters
-  learning_rate: 1e-5
-  batch_size_per_gpu: 800
+  learning_rate: 1e-4
+  batch_size_per_gpu: 190  # Optimized for ~10 hour training (8.4 hrs data * 0.6 sec/update RTX4090)
   batch_size_type: frame  # frame | sample
-  max_samples: 8  # Max sequences per batch
+  max_samples: 32  # Max sequences per batch
   grad_accumulation_steps: 1
   max_grad_norm: 1.0
-  
-  # Training schedule
-  epochs: 2
-  num_warmup_updates: 100
-  save_per_updates: 50
-  keep_last_n_checkpoints: 3  # -1 to keep all, 0 to not save intermediate, > 0 to keep last N
-  last_per_updates: 5000
-  
+
+  # Training schedule (4 epochs * ~2.5 hours per epoch ≈ 10 hours total)
+  epochs: 4
+  num_warmup_updates: 500  # Proportional warmup for longer training
+  save_per_updates: 500  # Save checkpoint every ~300 seconds (~5 minutes)
+  keep_last_n_checkpoints: 2  # -1 to keep all, 0 to not save intermediate, > 0 to keep last N
+  last_per_updates: 2000  # Save last model every ~1200 seconds (~20 minutes)
+
+  # Validation and Early Stopping
+  validation_split: data/voxe/manifests/val.jsonl
+  validation_interval: 1  # Validate every N epochs
+  early_stopping_patience: 3  # Stop if validation loss doesn't improve for N validation checks
+  early_stopping_threshold: 0.001  # Min relative improvement to count as improvement
+
   # Fine-tuning options
   finetune: true
   pretrain: null  # Path to custom pretrained checkpoint (null uses default from HuggingFace)
-  
+
   # Tokenizer settings
   tokenizer: char  # pinyin | char | custom
   tokenizer_path: null  # Path to custom vocab.txt (only used if tokenizer = 'custom')
-  
+
   # Logging
-  log_samples: false
-  logger: null  # null | wandb | tensorboard
+  log_samples: true
+  logger: wandb  # null | wandb | tensorboard
   bnb_optimizer: false  # Use 8-bit Adam optimizer
 
 inference:
   # Model settings
   model: F5TTS_v1_Base
   model_cfg: null  # Path to model config YAML (optional)
-  
+
   # Checkpoint and vocab
   ckpt_file: ckpts/voxe/model_last.pt
   vocab_file: data/voxe_char/vocab.txt
-  
+
   # Reference audio and text
-  ref_audio: data/voxe/wav24k/esd/0011/Angry/0011_000351.wav
+  ref_audio: data/voxe/wav24k/esd/0011/Neutral/0011_000001.wav
   ref_text: "the nine the eggs, i keep."
   
   # Generation settings
@@ -69,6 +75,22 @@ inference:
   sway_sampling_coef: null  # null uses default
   cfg_strength: null  # null uses default
   fix_duration: null  # null uses default
+
+wandb:
+  # Weights & Biases configuration
+  enabled: true
+  project: voxe-tts
+  entity: rr-sjsu
+  name: voxe_full_finetune_rtx4090
+  tags:
+    - voxe-full
+    - fine-tune
+    - rtx4090
+    - 18940-samples
+    - full-dataset
+  notes: "Full VOXE dataset fine-tuning (18,940 samples, all speakers/emotions)"
+  save_code: true
+  log_frequency: 10
 
 docker:
   # Docker image settings
