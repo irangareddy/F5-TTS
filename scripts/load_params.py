@@ -176,14 +176,57 @@ def build_training_command(params: dict, dry_run: bool = False, overrides: list 
         docker["image"],
     ])
 
-    # Use W&B wrapper if logger is wandb, otherwise use finetune_cli directly
+    # Use W&B wrapper if logger is wandb, otherwise use finetune_cli or manifest_cli
     use_wandb_wrapper = training.get("logger") == "wandb" and wandb_config.get("enabled", False)
+
+    # Check if validation_split is configured (indicates manifest-based training)
+    use_manifest_training = bool(training.get("validation_split"))
 
     if use_wandb_wrapper:
         cmd.extend([
             "python", f"{docker['workdir']}/train_with_wandb.py",
             # Wrapper reads params.yaml, no need to pass arguments
         ])
+    elif use_manifest_training:
+        cmd.extend([
+            "python", f"{docker['workdir']}/src/f5_tts/train/train_manifest_cli.py",
+            "--exp_name", training["exp_name"],
+            "--dataset_name", training["dataset_name"],
+            "--manifest_train", training.get("validation_split", "data/voxe/manifests/train.jsonl").replace("val.jsonl", "train.jsonl"),
+            "--manifest_val", training.get("validation_split", "data/voxe/manifests/val.jsonl"),
+            "--learning_rate", str(training["learning_rate"]),
+            "--batch_size_per_gpu", str(training["batch_size_per_gpu"]),
+            "--batch_size_type", training["batch_size_type"],
+            "--max_samples", str(training["max_samples"]),
+            "--epochs", str(training["epochs"]),
+            "--num_warmup_updates", str(training["num_warmup_updates"]),
+            "--save_per_updates", str(training["save_per_updates"]),
+            "--keep_last_n_checkpoints", str(training["keep_last_n_checkpoints"]),
+            "--last_per_updates", str(training.get("last_per_updates", 5000)),
+            "--validation_interval", str(training.get("validation_interval", 1)),
+            "--early_stopping_patience", str(training.get("early_stopping_patience", 3)),
+            "--early_stopping_threshold", str(training.get("early_stopping_threshold", 0.001)),
+        ])
+
+        if training.get("finetune", False):
+            cmd.append("--finetune")
+
+        if training.get("pretrain"):
+            cmd.extend(["--pretrain", training["pretrain"]])
+
+        cmd.extend(["--tokenizer", training["tokenizer"]])
+
+        if training.get("tokenizer_path"):
+            cmd.extend(["--tokenizer_path", training["tokenizer_path"]])
+
+        if training.get("log_samples", False):
+            cmd.append("--log_samples")
+
+        if training.get("logger"):
+            cmd.extend(["--logger", training["logger"]])
+
+        if training.get("bnb_optimizer", False):
+            cmd.append("--bnb_optimizer")
     else:
         cmd.extend([
             "python", f"{docker['workdir']}/src/f5_tts/train/finetune_cli.py",
