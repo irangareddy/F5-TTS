@@ -10,24 +10,24 @@ training:
 
   # Training hyperparameters
   learning_rate: 1e-4
-  batch_size_per_gpu: 190  # Optimized for ~10 hour training (8.4 hrs data * 0.6 sec/update RTX4090)
+  batch_size_per_gpu: 170  # Reduced from 190 for stability and OOM prevention
   batch_size_type: frame  # frame | sample
-  max_samples: 32  # Max sequences per batch
-  grad_accumulation_steps: 1
-  max_grad_norm: 1.0
+  max_samples: 26  # Reduced from 32 for cleaner batches with fewer long sequences
+  grad_accumulation_steps: 2  # Increased from 1 to restore effective batch size after reductions
+  max_grad_norm: 0.5  # Reduced from 1.0 to prevent gradient spikes and emotion collapse
 
-  # Training schedule (4 epochs * ~2.5 hours per epoch ≈ 10 hours total)
-  epochs: 4
-  num_warmup_updates: 500  # Proportional warmup for longer training
-  save_per_updates: 500  # Save checkpoint every ~300 seconds (~5 minutes)
-  keep_last_n_checkpoints: 2  # -1 to keep all, 0 to not save intermediate, > 0 to keep last N
-  last_per_updates: 2000  # Save last model every ~1200 seconds (~20 minutes)
+  # Training schedule (20 epochs * 26 min ≈ 8.7 hours = fits 10-hour budget)
+  epochs: 20  # Increased from 4 to maximize learning iterations in 10-hour window
+  num_warmup_updates: 1500  # Increased from 500 for stable emotion learning early
+  save_per_updates: 2000  # Increased from 500 to reduce I/O overhead
+  keep_last_n_checkpoints: 5  # Increased from 2 for better rollback (emotion improves late)
+  last_per_updates: 8000  # Increased from 2000 to spread final snapshots across training
 
   # Validation and Early Stopping
   validation_split: data/voxe/manifests/val.jsonl
   validation_interval: 1  # Validate every N epochs
-  early_stopping_patience: 3  # Stop if validation loss doesn't improve for N validation checks
-  early_stopping_threshold: 0.001  # Min relative improvement to count as improvement
+  early_stopping_patience: 4  # Increased from 3 for longer convergence on emotion metrics
+  early_stopping_threshold: 0.0005  # Decreased from 0.001 to catch subtle improvements
 
   # Fine-tuning options
   finetune: true
@@ -38,7 +38,7 @@ training:
   tokenizer_path: null  # Path to custom vocab.txt (only used if tokenizer = 'custom')
 
   # Logging
-  log_samples: true
+  log_samples: false  # Disabled to reduce I/O overhead (~2-3 min saved per checkpoint)
   logger: wandb  # null | wandb | tensorboard
   bnb_optimizer: false  # Use 8-bit Adam optimizer
 
@@ -48,7 +48,7 @@ inference:
   model_cfg: null  # Path to model config YAML (optional)
 
   # Checkpoint and vocab
-  ckpt_file: ckpts/voxe/model_last.pt
+  ckpt_file: ckpts/F5TTS_v1_Base_voxe_manifest/model_best.pt
   vocab_file: data/voxe_char/vocab.txt
 
   # Reference audio and text
@@ -70,10 +70,10 @@ inference:
   vocoder_name: vocos  # vocos | bigvgan
   target_rms: null  # null uses default
   cross_fade_duration: null  # null uses default
-  nfe_step: null  # null uses default
-  speed: null  # null uses default
-  sway_sampling_coef: null  # null uses default
-  cfg_strength: null  # null uses default
+  nfe_step: 32  # Standard CFM denoising steps for consistent quality
+  speed: 1.0  # Neutral tempo (emotion ≠ speed)
+  sway_sampling_coef: 0.4  # Smooth prosody, prevent jitter across emotions
+  cfg_strength: 1.2  # Sharpen articulation without losing emotion
   fix_duration: null  # null uses default
 
 wandb:
@@ -81,26 +81,27 @@ wandb:
   enabled: true
   project: voxe-tts
   entity: rr-sjsu
-  name: voxe_full_finetune_rtx4090
+  name: voxe_full_finetune_rtx4090_20epochs
   tags:
     - voxe-full
     - fine-tune
     - rtx4090
-    - 18940-samples
+    - 15152-samples
     - full-dataset
-  notes: "Full VOXE dataset fine-tuning (18,940 samples, all speakers/emotions)"
+    - 20-epochs
+  notes: "Full VOXE dataset fine-tuning (15,152 training samples, 20 epochs, optimized for 10-hour window)"
   save_code: true
-  log_frequency: 10
+  log_frequency: 50  # Increased from 10 to reduce logging overhead
 
 docker:
   # Docker image settings
   image: f5-tts:latest
   container_name: f5-tts-jupyter
-  
+
   # GPU and resource settings
   gpus: all
-  shm_size: 2g
-  
+  shm_size: 64g  # Increased from 2g for large batch DataLoader queues
+
   # Working directory inside container
   workdir: /workspace/F5-TTS
   
