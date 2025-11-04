@@ -1,0 +1,102 @@
+# F5-TTS Configuration Parameters
+# This file contains all training, inference, and Docker settings for F5-TTS
+
+training:
+  # Model architecture: F5TTS_v1_Base | F5TTS_Base | E2TTS_Base
+  exp_name: F5TTS_v1_Base
+  
+  # Dataset name - determines data directory and checkpoint output directory
+  dataset_name: voxe
+  
+  # Training hyperparameters
+  learning_rate: 1e-5
+  batch_size_per_gpu: 800
+  batch_size_type: frame  # frame | sample
+  max_samples: 8  # Max sequences per batch
+  grad_accumulation_steps: 1
+  max_grad_norm: 1.0
+  
+  # Training schedule
+  epochs: 2
+  num_warmup_updates: 100
+  save_per_updates: 50
+  keep_last_n_checkpoints: 3  # -1 to keep all, 0 to not save intermediate, > 0 to keep last N
+  last_per_updates: 5000
+  
+  # Fine-tuning options
+  finetune: true
+  pretrain: null  # Path to custom pretrained checkpoint (null uses default from HuggingFace)
+  
+  # Tokenizer settings
+  tokenizer: char  # pinyin | char | custom
+  tokenizer_path: null  # Path to custom vocab.txt (only used if tokenizer = 'custom')
+  
+  # Logging
+  log_samples: false
+  logger: null  # null | wandb | tensorboard
+  bnb_optimizer: false  # Use 8-bit Adam optimizer
+
+inference:
+  # Model settings
+  model: F5TTS_v1_Base
+  model_cfg: null  # Path to model config YAML (optional)
+  
+  # Checkpoint and vocab
+  ckpt_file: ckpts/voxe/model_last.pt
+  vocab_file: data/voxe_char/vocab.txt
+  
+  # Reference audio and text
+  ref_audio: data/voxe/wav24k/esd/0011/Angry/0011_000351.wav
+  ref_text: "the nine the eggs, i keep."
+  
+  # Generation settings
+  gen_text: "This is a test of the fine-tuned F5-TTS model on the VOXE dataset."
+  gen_file: ""  # File with text to generate (ignores gen_text if set)
+  
+  # Output settings
+  output_dir: tests
+  output_file: voxe_test.wav
+  save_chunk: false
+  remove_silence: false
+  
+  # Vocoder settings
+  load_vocoder_from_local: false
+  vocoder_name: vocos  # vocos | bigvgan
+  target_rms: null  # null uses default
+  cross_fade_duration: null  # null uses default
+  nfe_step: null  # null uses default
+  speed: null  # null uses default
+  sway_sampling_coef: null  # null uses default
+  cfg_strength: null  # null uses default
+  fix_duration: null  # null uses default
+
+docker:
+  # Docker image settings
+  image: f5-tts:latest
+  container_name: f5-tts-jupyter
+  
+  # GPU and resource settings
+  gpus: all
+  shm_size: 2g
+  
+  # Working directory inside container
+  workdir: /workspace/F5-TTS
+  
+  # Port mappings
+  jupyter_port: 8888
+
+paths:
+  # Local paths (relative to project root)
+  data: data
+  ckpts: ckpts
+  src: src
+  notebooks: notebooks
+  tests: tests
+  
+  # Container paths (inside Docker)
+  container_data: /workspace/F5-TTS/data
+  container_ckpts: /workspace/F5-TTS/ckpts
+  container_src: /workspace/F5-TTS/src
+  container_notebooks: /workspace/F5-TTS/notebooks
+  container_tests: /workspace/F5-TTS/tests
+

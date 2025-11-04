@@ -1,0 +1,74 @@
+version: '3'
+
+vars:
+  PARAMS_FILE: params.yaml
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  check:
+    desc: Validate and show current configuration from params.yaml
+    cmds:
+      - python scripts/load_params.py check
+
+  train:
+    desc: Run training using params from params.yaml
+    cmds:
+      - python scripts/load_params.py train {{.CLI_ARGS}}
+
+  train:dry-run:
+    desc: Show training command without executing
+    cmds:
+      - python scripts/load_params.py train --dry-run {{.CLI_ARGS}}
+
+  infer:
+    desc: Run inference using params from params.yaml
+    cmds:
+      - python scripts/load_params.py infer {{.CLI_ARGS}}
+
+  infer:dry-run:
+    desc: Show inference command without executing
+    cmds:
+      - python scripts/load_params.py infer --dry-run {{.CLI_ARGS}}
+
+  jupyter:
+    desc: Start Jupyter Lab with Docker Compose
+    cmds:
+      - docker-compose up -d jupyter
+      - echo "Jupyter Lab started! Access it at: http://localhost:8888"
+      - echo "To stop: task jupyter:stop"
+      - echo "To view logs: task jupyter:logs"
+    preconditions:
+      - test -f "{{.PARAMS_FILE}}"
+      - test -f "docker-compose.yml"
+
+  jupyter:stop:
+    desc: Stop Jupyter Lab container
+    cmds:
+      - docker-compose stop jupyter
+      - docker-compose rm -f jupyter
+      - echo "Jupyter Lab container stopped"
+
+  jupyter:logs:
+    desc: View Jupyter Lab logs
+    cmds:
+      - docker-compose logs -f jupyter
+
+  verify:
+    desc: Verify setup (GPU, Docker, data)
+    cmds:
+      - python scripts/load_params.py verify
+
+  clean:
+    desc: Clean checkpoints and outputs
+    cmds:
+      - python scripts/load_params.py clean --confirm
+
+  clean:checkpoints:
+    desc: Clean only checkpoints (keep outputs)
+    cmds:
+      - python scripts/load_params.py clean --checkpoints-only --confirm
+
