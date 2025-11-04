@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: f5-tts:latest
+    container_name: f5-tts-jupyter
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/workspace/F5-TTS/data
+      - ./ckpts:/workspace/F5-TTS/ckpts
+      - ./src:/workspace/F5-TTS/src
+      - ./notebooks:/workspace/F5-TTS/notebooks
+      - ./tests:/workspace/F5-TTS/tests
+    working_dir: /workspace/F5-TTS
+    shm_size: 2g
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+
