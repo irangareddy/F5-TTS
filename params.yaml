@@ -16,8 +16,8 @@ training:
   grad_accumulation_steps: 2  # Increased from 1 to restore effective batch size after reductions
   max_grad_norm: 0.5  # Reduced from 1.0 to prevent gradient spikes and emotion collapse
 
-  # Training schedule (20 epochs * 26 min ≈ 8.7 hours = fits 10-hour budget)
-  epochs: 20  # Increased from 4 to maximize learning iterations in 10-hour window
+  # Training schedule (40 epochs * 15 min ≈ 10 hours = optimized batch config)
+  epochs: 40  # Increased from 20 based on actual 12min/epoch performance with optimized params
   num_warmup_updates: 1500  # Increased from 500 for stable emotion learning early
   save_per_updates: 2000  # Increased from 500 to reduce I/O overhead
   keep_last_n_checkpoints: 5  # Increased from 2 for better rollback (emotion improves late)
