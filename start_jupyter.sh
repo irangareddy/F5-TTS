@@ -2,6 +2,14 @@
 # Start Jupyter Lab with Docker
 # This script starts Jupyter Lab in a Docker container with GPU support
 
+# Check if container exists and stop/remove it
+if docker ps -a --format '{{.Names}}' | grep -q "^f5-tts-jupyter$"; then
+    echo "Stopping existing container..."
+    docker stop f5-tts-jupyter 2>/dev/null || true
+    echo "Removing existing container..."
+    docker rm f5-tts-jupyter 2>/dev/null || true
+fi
+
 docker run -d \
   --name f5-tts-jupyter \
   --gpus all \
