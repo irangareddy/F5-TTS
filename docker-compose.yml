@@ -25,7 +25,9 @@ services:
       - ./src:/workspace/F5-TTS/src
       - ./notebooks:/workspace/F5-TTS/notebooks
       - ./tests:/workspace/F5-TTS/tests
+      - ./generate_demos.py:/workspace/F5-TTS/generate_demos.py
+      - ./params.yaml:/workspace/F5-TTS/params.yaml
     working_dir: /workspace/F5-TTS
-    shm_size: 2g
+    shm_size: 64g
     command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
 
