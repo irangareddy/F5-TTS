@@ -17,7 +17,7 @@ training:
   max_grad_norm: 0.5  # Reduced from 1.0 to prevent gradient spikes and emotion collapse
 
   # Training schedule (50 epochs with 10 patience for voxe_data_v2)
-  epochs: 1  # Testing with 1 epoch first
+  epochs: 50  # Full training run for voxe_data_v2
   num_warmup_updates: 1500  # Increased from 500 for stable emotion learning early
   save_per_updates: 2000  # Increased from 500 to reduce I/O overhead
   keep_last_n_checkpoints: 5  # Increased from 2 for better rollback (emotion improves late)
@@ -84,18 +84,27 @@ wandb:
   enabled: true
   project: voxe-tts
   entity: rr-sjsu
-  name: voxe_data_v2_finetune_rtx4090_50epochs
+  name: voxe_data_v2_f5tts_v1_base_50ep_10pat_rtx4090
   tags:
     - voxe-data-v2
-    - fine-tune
-    - rtx4090
-    - 15080-samples
-    - full-dataset
+    - f5tts-v1-base
+    - fine-tuning
+    - emotional-tts
     - 50-epochs
-    - 10-patience
-  notes: "voxe_data_v2 dataset fine-tuning (15,080 training samples, 50 epochs, 10 patience)"
+    - early-stopping
+    - rtx4090
+    - manifest-format
+  notes: |
+    Fine-tuning F5TTS_v1_Base on voxe_data_v2 dataset.
+    
+    Dataset: 15,080 training samples, 8.35 hours audio
+    Architecture: F5TTS_v1_Base (DiT, dim=1024, depth=22)
+    Training: 50 epochs, batch_size=170 frames, grad_accum=2, lr=1e-4
+    Early stopping: patience=10, threshold=0.0005
+    Hardware: RTX 4090, 32 CPU cores, num_workers=16
+    Format: Manifest-based training with validation split
   save_code: true
-  log_frequency: 50  # Increased from 10 to reduce logging overhead
+  log_frequency: 50  # Log every 50 updates to reduce overhead
 
 docker:
   # Docker image settings
