@@ -98,42 +98,91 @@ def setup_wandb(params: dict) -> None:
 
 
 def build_finetune_command(params: dict, extra_args: list = None) -> list:
-    """Build finetune_cli.py command."""
+    """Build training command - uses train_manifest_cli.py if validation_split is set, otherwise finetune_cli.py."""
     training = params["training"]
+    
+    # Determine which training script to use
+    # Priority: manifest CLI (if validation_split set) > finetune_cli (default)
+    use_manifest_training = bool(training.get("validation_split"))
+    
+    if use_manifest_training:
+        # Use train_manifest_cli.py for manifest-based training
+        cmd = [
+            "python", "src/f5_tts/train/train_manifest_cli.py",
+            "--exp_name", training["exp_name"],
+            "--dataset_name", training["dataset_name"],
+            "--manifest_train", training.get("validation_split", "data/voxe/manifests/train.jsonl").replace("val.jsonl", "train.jsonl"),
+            "--manifest_val", training.get("validation_split", "data/voxe/manifests/val.jsonl"),
+            "--learning_rate", str(training["learning_rate"]),
+            "--batch_size_per_gpu", str(training["batch_size_per_gpu"]),
+            "--batch_size_type", training["batch_size_type"],
+            "--max_samples", str(training["max_samples"]),
+            "--grad_accumulation_steps", str(training.get("grad_accumulation_steps", 1)),
+            "--max_grad_norm", str(training.get("max_grad_norm", 1.0)),
+            "--epochs", str(training["epochs"]),
+            "--num_warmup_updates", str(training["num_warmup_updates"]),
+            "--save_per_updates", str(training["save_per_updates"]),
+            "--keep_last_n_checkpoints", str(training["keep_last_n_checkpoints"]),
+            "--last_per_updates", str(training.get("last_per_updates", 5000)),
+            "--validation_interval", str(training.get("validation_interval", 1)),
+            "--early_stopping_patience", str(training.get("early_stopping_patience", 3)),
+            "--early_stopping_threshold", str(training.get("early_stopping_threshold", 0.001)),
+        ]
 
-    cmd = [
-        "python", "src/f5_tts/train/finetune_cli.py",
-        "--exp_name", training["exp_name"],
-        "--dataset_name", training["dataset_name"],
-        "--learning_rate", str(training["learning_rate"]),
-        "--batch_size_per_gpu", str(training["batch_size_per_gpu"]),
-        "--batch_size_type", training["batch_size_type"],
-        "--max_samples", str(training["max_samples"]),
-        "--epochs", str(training["epochs"]),
-        "--num_warmup_updates", str(training["num_warmup_updates"]),
-        "--save_per_updates", str(training["save_per_updates"]),
-        "--keep_last_n_checkpoints", str(training["keep_last_n_checkpoints"]),
-    ]
+        if training.get("finetune", False):
+            cmd.append("--finetune")
 
-    if training.get("finetune", False):
-        cmd.append("--finetune")
+        if training.get("pretrain"):
+            cmd.extend(["--pretrain", training["pretrain"]])
 
-    if training.get("pretrain"):
-        cmd.extend(["--pretrain", training["pretrain"]])
+        cmd.extend(["--tokenizer", training["tokenizer"]])
 
-    cmd.extend(["--tokenizer", training["tokenizer"]])
+        if training.get("tokenizer_path"):
+            cmd.extend(["--tokenizer_path", training["tokenizer_path"]])
 
-    if training.get("tokenizer_path"):
-        cmd.extend(["--tokenizer_path", training["tokenizer_path"]])
+        if training.get("log_samples", False):
+            cmd.append("--log_samples")
 
-    if training.get("log_samples", False):
-        cmd.append("--log_samples")
+        if training.get("logger"):
+            cmd.extend(["--logger", training["logger"]])
 
-    if training.get("logger"):
-        cmd.extend(["--logger", training["logger"]])
+        if training.get("bnb_optimizer", False):
+            cmd.append("--bnb_optimizer")
+    else:
+        # Use finetune_cli.py for arrow-based training
+        cmd = [
+            "python", "src/f5_tts/train/finetune_cli.py",
+            "--exp_name", training["exp_name"],
+            "--dataset_name", training["dataset_name"],
+            "--learning_rate", str(training["learning_rate"]),
+            "--batch_size_per_gpu", str(training["batch_size_per_gpu"]),
+            "--batch_size_type", training["batch_size_type"],
+            "--max_samples", str(training["max_samples"]),
+            "--epochs", str(training["epochs"]),
+            "--num_warmup_updates", str(training["num_warmup_updates"]),
+            "--save_per_updates", str(training["save_per_updates"]),
+            "--keep_last_n_checkpoints", str(training["keep_last_n_checkpoints"]),
+        ]
 
-    if training.get("bnb_optimizer", False):
-        cmd.append("--bnb_optimizer")
+        if training.get("finetune", False):
+            cmd.append("--finetune")
+
+        if training.get("pretrain"):
+            cmd.extend(["--pretrain", training["pretrain"]])
+
+        cmd.extend(["--tokenizer", training["tokenizer"]])
+
+        if training.get("tokenizer_path"):
+            cmd.extend(["--tokenizer_path", training["tokenizer_path"]])
+
+        if training.get("log_samples", False):
+            cmd.append("--log_samples")
+
+        if training.get("logger"):
+            cmd.extend(["--logger", training["logger"]])
+
+        if training.get("bnb_optimizer", False):
+            cmd.append("--bnb_optimizer")
 
     # Add any extra arguments
     if extra_args:

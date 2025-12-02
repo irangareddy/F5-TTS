@@ -5,7 +5,7 @@ Training script that uses params.yaml configuration and supports early stopping 
 
 import os
 import yaml
-from importlib.resources import files
+import importlib.resources
 
 from f5_tts.model import CFM, DiT, Trainer
 from f5_tts.model.dataset import load_dataset, ManifestDataset
@@ -21,7 +21,7 @@ def load_config(config_path="params.yaml"):
 
 def main():
     # Change to project root
-    os.chdir(str(files("f5_tts").joinpath("../..")))
+    os.chdir(str(importlib.resources.files("f5_tts").joinpath("../..")))
 
     # Load configuration
     config = load_config("params.yaml")
@@ -40,27 +40,30 @@ def main():
     tokenizer_path = training_cfg.get("tokenizer_path", None)
 
     # Training hyperparameters
-    epochs = training_cfg["epochs"]
-    learning_rate = training_cfg["learning_rate"]
-    batch_size_per_gpu = training_cfg["batch_size_per_gpu"]
+    epochs = int(training_cfg["epochs"])
+    learning_rate = float(training_cfg["learning_rate"])
+    batch_size_per_gpu = int(training_cfg["batch_size_per_gpu"])
     batch_size_type = training_cfg.get("batch_size_type", "frame")
-    max_samples = training_cfg.get("max_samples", 16)
-    grad_accumulation_steps = training_cfg.get("grad_accumulation_steps", 1)
-    max_grad_norm = training_cfg.get("max_grad_norm", 1.0)
+    max_samples = int(training_cfg.get("max_samples", 16))
+    grad_accumulation_steps = int(training_cfg.get("grad_accumulation_steps", 1))
+    max_grad_norm = float(training_cfg.get("max_grad_norm", 1.0))
 
     # Checkpoint saving
-    save_per_updates = training_cfg.get("save_per_updates", 100)
-    keep_last_n_checkpoints = training_cfg.get("keep_last_n_checkpoints", 2)
-    last_per_updates = training_cfg.get("last_per_updates", 5000)
+    save_per_updates = int(training_cfg.get("save_per_updates", 100))
+    keep_last_n_checkpoints = int(training_cfg.get("keep_last_n_checkpoints", 2))
+    last_per_updates = int(training_cfg.get("last_per_updates", 5000))
 
     # Warmup
-    num_warmup_updates = training_cfg.get("num_warmup_updates", 100)
+    num_warmup_updates = int(training_cfg.get("num_warmup_updates", 100))
 
     # Validation and early stopping
     validation_split = training_cfg.get("validation_split", None)
-    validation_interval = training_cfg.get("validation_interval", 1)
-    early_stopping_patience = training_cfg.get("early_stopping_patience", 3)
-    early_stopping_threshold = training_cfg.get("early_stopping_threshold", 0.001)
+    validation_interval = int(training_cfg.get("validation_interval", 1))
+    early_stopping_patience = int(training_cfg.get("early_stopping_patience", 3))
+    early_stopping_threshold = float(training_cfg.get("early_stopping_threshold", 0.001))
+
+    # Data loading
+    num_workers = int(training_cfg.get("num_workers", 8))
 
     # Logging
     log_samples = training_cfg.get("log_samples", True)
@@ -70,7 +73,7 @@ def main():
     bnb_optimizer = training_cfg.get("bnb_optimizer", False)
 
     # Mel spec settings
-    mel_spec_type = inference_cfg.get("model_cfg", {}).get("mel_spec", {}).get("mel_spec_type", "vocos")
+    mel_spec_type = inference_cfg.get("vocoder_name", "vocos")
 
     mel_spec_kwargs = dict(
         target_sample_rate=24000,
@@ -82,8 +85,26 @@ def main():
     )
 
     # Get tokenizer
+    # For manifest format, use existing vocab file (voxe_char for char tokenizer)
     if tokenizer_type != "custom":
-        tokenizer_name = dataset_name
+        if validation_split:
+            # When using manifest format, check if dataset vocab exists
+            vocab_path = importlib.resources.files("f5_tts").joinpath(f"../../data/{dataset_name}_{tokenizer_type}/vocab.txt")
+            if not os.path.exists(vocab_path.as_posix()):
+                # Use voxe_char vocab as fallback for char tokenizer
+                if tokenizer_type == "char":
+                    fallback_vocab = importlib.resources.files("f5_tts").joinpath("../../data/voxe_char/vocab.txt")
+                    if os.path.exists(fallback_vocab.as_posix()):
+                        tokenizer_name = "voxe"
+                        print(f"Using vocab from: {fallback_vocab.as_posix()}")
+                    else:
+                        tokenizer_name = dataset_name
+                else:
+                    tokenizer_name = dataset_name
+            else:
+                tokenizer_name = dataset_name
+        else:
+            tokenizer_name = dataset_name
     else:
         tokenizer_name = tokenizer_path
     vocab_char_map, vocab_size = get_tokenizer(tokenizer_name, tokenizer_type)
@@ -110,7 +131,11 @@ def main():
         raise ValueError(f"Unknown model: {exp_name}")
 
     # Checkpoint path
-    checkpoint_path = f"ckpts/{exp_name}_{mel_spec_type}_{tokenizer_type}_{dataset_name}"
+    # Use manifest suffix if using manifest format, otherwise use standard format
+    if validation_split:
+        checkpoint_path = f"ckpts/{exp_name}_{dataset_name}_manifest"
+    else:
+        checkpoint_path = f"ckpts/{exp_name}_{mel_spec_type}_{tokenizer_type}_{dataset_name}"
     os.makedirs(checkpoint_path, exist_ok=True)
 
     # WandB configuration
@@ -146,8 +171,23 @@ def main():
     )
 
     # Load training dataset
-    print(f"Loading training dataset: {dataset_name}")
-    train_dataset = load_dataset(dataset_name, tokenizer_type, mel_spec_kwargs=mel_spec_kwargs)
+    # If validation_split is set, we're using manifest format, otherwise Arrow format
+    if validation_split:
+        # Use manifest format - load training dataset from manifest
+        train_manifest_path = validation_split.replace("val.jsonl", "train.jsonl")
+        if os.path.exists(train_manifest_path):
+            print(f"Loading training dataset from manifest: {train_manifest_path}")
+            train_dataset = ManifestDataset(
+                train_manifest_path,
+                **mel_spec_kwargs,
+            )
+            print(f"Training dataset size: {len(train_dataset)}")
+        else:
+            raise FileNotFoundError(f"Training manifest not found: {train_manifest_path}")
+    else:
+        # Use Arrow format
+        print(f"Loading training dataset: {dataset_name}")
+        train_dataset = load_dataset(dataset_name, tokenizer_type, mel_spec_kwargs=mel_spec_kwargs)
 
     # Load validation dataset if specified
     val_dataset = None
@@ -171,7 +211,7 @@ def main():
     trainer.train(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
-        num_workers=16,
+        num_workers=num_workers,
         resumable_with_seed=666,
     )
 

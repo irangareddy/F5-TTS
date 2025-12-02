@@ -68,11 +68,17 @@ class ManifestDataset(Dataset):
             # Return next valid sample
             return self.__getitem__((index + 1) % len(self.data))
 
-        # Auto-map manifest paths: handle outputs/full/ -> data/voxe/ mapping
+        # Auto-map manifest paths: handle outputs/full/ -> data/voxe/ or data/voxe_data_v2/ mapping
         if not os.path.exists(audio_path):
-            mapped_path = audio_path.replace("outputs/full/", "data/voxe/")
+            # Try voxe_data_v2 first (newer dataset)
+            mapped_path = audio_path.replace("outputs/full/", "data/voxe_data_v2/")
             if os.path.exists(mapped_path):
                 audio_path = mapped_path
+            else:
+                # Fallback to voxe (older dataset)
+                mapped_path = audio_path.replace("outputs/full/", "data/voxe/")
+                if os.path.exists(mapped_path):
+                    audio_path = mapped_path
 
         audio, source_sample_rate = torchaudio.load(audio_path)
 

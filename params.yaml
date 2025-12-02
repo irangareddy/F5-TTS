@@ -6,7 +6,7 @@ training:
   exp_name: F5TTS_v1_Base
 
   # Dataset name - determines data directory and checkpoint output directory
-  dataset_name: voxe
+  dataset_name: voxe_data_v2
 
   # Training hyperparameters
   learning_rate: 1e-4
@@ -16,17 +16,17 @@ training:
   grad_accumulation_steps: 2  # Increased from 1 to restore effective batch size after reductions
   max_grad_norm: 0.5  # Reduced from 1.0 to prevent gradient spikes and emotion collapse
 
-  # Training schedule (40 epochs * 15 min ≈ 10 hours = optimized batch config)
-  epochs: 40  # Increased from 20 based on actual 12min/epoch performance with optimized params
+  # Training schedule (50 epochs with 10 patience for voxe_data_v2)
+  epochs: 1  # Testing with 1 epoch first
   num_warmup_updates: 1500  # Increased from 500 for stable emotion learning early
   save_per_updates: 2000  # Increased from 500 to reduce I/O overhead
   keep_last_n_checkpoints: 5  # Increased from 2 for better rollback (emotion improves late)
   last_per_updates: 8000  # Increased from 2000 to spread final snapshots across training
 
   # Validation and Early Stopping
-  validation_split: data/voxe/manifests/val.jsonl
+  validation_split: data/voxe_data_v2/manifests/val.jsonl
   validation_interval: 1  # Validate every N epochs
-  early_stopping_patience: 4  # Increased from 3 for longer convergence on emotion metrics
+  early_stopping_patience: 10  # 10 patience for voxe_data_v2 fine-tuning
   early_stopping_threshold: 0.0005  # Decreased from 0.001 to catch subtle improvements
 
   # Fine-tuning options
@@ -36,6 +36,9 @@ training:
   # Tokenizer settings
   tokenizer: char  # pinyin | char | custom
   tokenizer_path: null  # Path to custom vocab.txt (only used if tokenizer = 'custom')
+
+  # Data loading
+  num_workers: 16  # Number of data loading workers (32 CPU cores on RTX 4090 machine)
 
   # Logging
   log_samples: false  # Disabled to reduce I/O overhead (~2-3 min saved per checkpoint)
@@ -48,11 +51,11 @@ inference:
   model_cfg: null  # Path to model config YAML (optional)
 
   # Checkpoint and vocab
-  ckpt_file: ckpts/F5TTS_v1_Base_voxe_manifest/model_best.pt
+  ckpt_file: ckpts/F5TTS_v1_Base_voxe_data_v2_manifest/model_best.pt
   vocab_file: data/voxe_char/vocab.txt
 
   # Reference audio and text
-  ref_audio: data/voxe/wav24k/esd/0011/Neutral/0011_000001.wav
+  ref_audio: data/voxe_data_v2/wav24k/esd/0011/Neutral/0011_000001.wav
   ref_text: "the nine the eggs, i keep."
   
   # Generation settings
@@ -81,15 +84,16 @@ wandb:
   enabled: true
   project: voxe-tts
   entity: rr-sjsu
-  name: voxe_full_finetune_rtx4090_20epochs
+  name: voxe_data_v2_finetune_rtx4090_50epochs
   tags:
-    - voxe-full
+    - voxe-data-v2
     - fine-tune
     - rtx4090
-    - 15152-samples
+    - 15080-samples
     - full-dataset
-    - 20-epochs
-  notes: "Full VOXE dataset fine-tuning (15,152 training samples, 20 epochs, optimized for 10-hour window)"
+    - 50-epochs
+    - 10-patience
+  notes: "voxe_data_v2 dataset fine-tuning (15,080 training samples, 50 epochs, 10 patience)"
   save_code: true
   log_frequency: 50  # Increased from 10 to reduce logging overhead
 
