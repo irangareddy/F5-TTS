@@ -21,6 +21,20 @@ pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install -e .
 ```
 
+### What Gets Downloaded Automatically
+
+- **Pretrained models**: Downloaded automatically from HuggingFace on first run
+  - F5TTS_v1_Base: `hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors` (~1.35GB)
+  - Saved to: `~/.cache/huggingface/hub/` or `ckpts/<exp_name>_<dataset>_manifest/pretrained_*.safetensors`
+- **Vocab files**: Uses existing `data/voxe_char/vocab.txt` (auto-fallback if dataset vocab missing)
+
+### What You Need to Provide
+
+- **Your dataset**: 
+  - `data/<dataset_name>/manifests/train.jsonl` - Training manifest
+  - `data/<dataset_name>/manifests/val.jsonl` - Validation manifest
+  - `data/<dataset_name>/wav24k/` - Audio files referenced in manifests
+
 ## Data Check
 
 ```bash
@@ -64,7 +78,7 @@ training:
   validation_split: data/voxe_data_v2/manifests/val.jsonl
   epochs: 50
   batch_size_per_gpu: 170
-  num_workers: 8
+  num_workers: 16
   early_stopping_patience: 10
 ```
 
