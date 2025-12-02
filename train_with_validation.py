@@ -4,6 +4,7 @@ Training script that uses params.yaml configuration and supports early stopping 
 """
 
 import os
+import sys
 import yaml
 import importlib.resources
 
@@ -23,8 +24,9 @@ def main():
     # Change to project root
     os.chdir(str(importlib.resources.files("f5_tts").joinpath("../..")))
 
-    # Load configuration
-    config = load_config("params.yaml")
+    # Load configuration - accept config file as command-line argument
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "params.yaml"
+    config = load_config(config_path)
 
     # Extract configuration sections
     training_cfg = config["training"]
@@ -111,7 +113,8 @@ def main():
 
     # Create model
     print(f"Creating model: {exp_name}")
-    if exp_name == "F5TTS_v1_Base":
+    # Handle both F5TTS_v1_Base and F5TTS_v1_Base_emotion_focus (same architecture)
+    if exp_name == "F5TTS_v1_Base" or exp_name == "F5TTS_v1_Base_emotion_focus":
         from f5_tts.model.cfm import CFM
         model = CFM(
             transformer=DiT(
@@ -131,8 +134,10 @@ def main():
         raise ValueError(f"Unknown model: {exp_name}")
 
     # Checkpoint path
-    # Use manifest suffix if using manifest format, otherwise use standard format
-    if validation_split:
+    # For emotion_focus, use exp_name directly; otherwise use standard format
+    if "emotion_focus" in exp_name:
+        checkpoint_path = f"ckpts/{exp_name}"
+    elif validation_split:
         checkpoint_path = f"ckpts/{exp_name}_{dataset_name}_manifest"
     else:
         checkpoint_path = f"ckpts/{exp_name}_{mel_spec_type}_{tokenizer_type}_{dataset_name}"
